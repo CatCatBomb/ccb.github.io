@@ -36,11 +36,11 @@
         let currentDirection = -1; // 当前朝向: -1为向左(初始), 1为向右
         //控制点(相对于人影中心的偏移)一根据你图片手动微调
         const controlPoints = [
-            { id: 'head', x: 0, y: -120, color: '#00f0ff', radius: 25, type: 'upper' }, //头
-            { id: 'lhand', x: -80, y: -30, color: '#00f0ff', radius: 20, type: 'upper' },//左手
-            { id: 'rhand', x: 70, y: -40, color: '#00f0ff', radius: 20, type: 'upper' },//右手
-            { id: 'lfoot', x: -40, y: 90, color: '#ff0066', radius: 18, type: 'lower' },//左脚
-            { id: 'rfoot', x: 35, y: 95, color: '#ff0066', radius: 18, type: 'lower' }//右脚
+            { id: 'head', x: 0, y: -120, color: '#00f0ff', radius: 30, type: 'upper' }, //头
+            { id: 'lhand', x: -80, y: -30, color: '#00f0ff', radius: 25, type: 'upper' },//左手
+            { id: 'rhand', x: 70, y: -40, color: '#00f0ff', radius: 25, type: 'upper' },//右手
+            { id: 'lfoot', x: -40, y: 90, color: '#ff0066', radius: 25, type: 'lower' },//左脚
+            { id: 'rfoot', x: 35, y: 95, color: '#ff0066', radius: 25, type: 'lower' }//右脚
         ];
         // 记录拖拽状态
         let activePoints = new Set(); // 当前正在被拖拽的点集合
@@ -163,16 +163,14 @@
                     const commonDistance = Math.min(upperDistance, lowerDistance); // 取较小移动距离
 
                     // 只有当两个点都移动了足够距离,且方向一致时才移动图片
-                    if (upperDistance > 2 || lowerDistance > 2) {
-                        if (isDirectionConsistent) {
-                            // 方向一致,沿着共同方向移动
-                            puppetX += commonDx;
-                            puppetY += commonDy;
-                            needRedraw = true;
-                        } else {
-                            // 方向不一致,显示提示
-                            console.log('方向不一致,无法移动 - 上身和下身移动方向差异过大');
-                        }
+                    if (isDirectionConsistent && (upperDistance > 2 || lowerDistance > 2)) {
+                        // 沿着共同方向移动,使用较小距离
+                        puppetX += commonDx;
+                        puppetY += commonDy;
+                        needRedraw = true;
+                    } else {
+                        // 方向不一致,显示提示
+                        console.log('方向不一致,无法移动 - 上身和下身移动方向差异过大');
                     }
                 }
             }
