@@ -51,7 +51,7 @@
         const MIRROR_THRESHOLD = 45; // 镜像翻转的角度阈值(度)
         let isDragging = false; // 是否正在拖拽中
         let img = new Image();
-        img.src = 'https://qncdn.youinsh.cn/saastest/publicFile/img/0.png';//- 换成你的图片路径
+        img.src = './0.png';//- 换成你的图片路径
         function draw() {
             ctx.clearRect(0, 0, W, H);
             //背景(羊皮纸)
@@ -140,26 +140,26 @@
                 const moveDistance = Math.hypot(dx, dy);
 
                 // 检查移动角度变化是否超过45度
-                if (lastMoveAngles[p.id] !== null && moveDistance > 5) {
-                    const angleDiff = Math.abs(moveAngle - lastMoveAngles[p.id]);
-                    const normalizedAngleDiff = angleDiff > 180 ? 360 - angleDiff : angleDiff;
+                // if (lastMoveAngles[p.id] !== null && moveDistance > 5) {
+                //     const angleDiff = Math.abs(moveAngle - lastMoveAngles[p.id]);
+                //     const normalizedAngleDiff = angleDiff > 180 ? 360 - angleDiff : angleDiff;
 
-                    // 只有角度变化达到45度或以上,且方向与当前图片方向相反时才翻转
-                    if (normalizedAngleDiff >= MIRROR_THRESHOLD) {
-                        // 计算移动方向:dx > 0为向右, dx < 0为向左
-                        const moveDirection = dx > 0 ? 1 : -1;
+                //     // 只有角度变化达到45度或以上,且方向与当前图片方向相反时才翻转
+                //     if (normalizedAngleDiff >= MIRROR_THRESHOLD) {
+                //         // 计算移动方向:dx > 0为向右, dx < 0为向左
+                //         const moveDirection = dx > 0 ? 1 : -1;
 
-                        // 只有移动方向与当前图片方向相反时才翻转
-                        if (moveDirection !== currentDirection) {
-                            currentDirection = moveDirection;
-                            isFlipped = !isFlipped;
-                            flipControlPoints();
-                            console.log(`触发镜像翻转! 当前朝向: ${currentDirection === 1 ? '向右' : '向左'}, 翻转状态: ${isFlipped ? '翻转' : '正常'}`);
-                            // 翻转后清除该点的角度记录,避免重复触发
-                            lastMoveAngles[p.id] = null;
-                        }
-                    }
-                }
+                //         // 只有移动方向与当前图片方向相反时才翻转
+                //         if (moveDirection !== currentDirection) {
+                //             currentDirection = moveDirection;
+                //             isFlipped = !isFlipped;
+                //             flipControlPoints();
+                //             console.log(`触发镜像翻转! 当前朝向: ${currentDirection === 1 ? '向右' : '向左'}, 翻转状态: ${isFlipped ? '翻转' : '正常'}`);
+                //             // 翻转后清除该点的角度记录,避免重复触发
+                //             lastMoveAngles[p.id] = null;
+                //         }
+                //     }
+                // }
 
                 // 记录本次移动角度(首次移动或移动距离足够大时)
                 if (moveDistance > 5) {
