@@ -1,0 +1,232 @@
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <title>影人合作表演 - 交互版</title>
+    <style>
+        body {
+            margin: 0;
+            background: #f5e8d3;
+            font-family: sans-serif;
+        }
+
+        canvas {
+            display: block;
+            margin: 20px auto;
+            border: 4px solid #333;
+            background: #fffaf0;
+        }
+
+        .tips {
+            text-align: center;
+            color: #666;
+        }
+    </style>
+</head>
+
+<body><canvas id="stage" width="900" height="500"></canvas>
+    <div class="tips">操作说明:<br>
+        1点击发光点触发动作<br>
+        2拖拽蓝色点(上身)+红色点(下身)方向一致-人影移动<br>3同时同向旋转-人影转身</div>
+    <script>
+        const canvas = document.getElementById('stage'); const ctx = canvas.getContext('2d'); const W = 900, H = 500;
+        let puppetX = 450, puppetY = 280;//人影中心位置
+        let puppetAngle = 0; //整体旋转角度(度
+        let isFlipped = false; // 是否镜像翻转
+        let currentDirection = -1; // 当前朝向: -1为向左(初始), 1为向右
+        //控制点(相对于人影中心的偏移)一根据你图片手动微调
+        const controlPoints = [
+            { id: 'head', x: 0, y: -120, color: '#00f0ff', radius: 25, type: 'upper' }, //头
+            { id: 'lhand', x: -80, y: -30, color: '#00f0ff', radius: 20, type: 'upper' },//左手
+            { id: 'rhand', x: 70, y: -40, color: '#00f0ff', radius: 20, type: 'upper' },//右手
+            { id: 'lfoot', x: -40, y: 90, color: '#ff0066', radius: 18, type: 'lower' },//左脚
+            { id: 'rfoot', x: 35, y: 95, color: '#ff0066', radius: 18, type: 'lower' }//右脚
+        ];
+        // 记录拖拽状态
+        let activePoints = new Set(); // 当前正在被拖拽的点集合
+        let lastPositions = {}; // 记录每个点上一帧的位置
+        let pointPressTime = {}; // 记录每个点按下的时间戳
+        let lastMoveAngles = {}; // 记录每个点上次移动角度
+        const SIMULTANEOUS_THRESHOLD = 200; // 同时按下的时间阈值(毫秒)
+        const MIRROR_THRESHOLD = 45; // 镜像翻转的角度阈值(度)
+        let isDragging = false; // 是否正在拖拽中
+        let img = new Image();
+        img.src = './0.png';//- 换成你的图片路径
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            //背景(羊皮纸)
+            ctx.fillStyle = '#f5e8d3';
+            ctx.fillRect(0, 0, W, H);
+            ctx.save();
+            ctx.translate(puppetX, puppetY);
+            ctx.rotate(puppetAngle * Math.PI / 180);
+
+            // 镜像翻转处理
+            if (isFlipped) {
+                ctx.scale(-1, 1);
+            }
+
+            //绘制皮影人物
+            ctx.drawImage(img, -img.width / 2, -img.height / 2);
+
+            //绘制发光控制点(实时高亮)
+            controlPoints.forEach(p => {
+                const px = p.x;
+                const py = p.y;
+                //发光
+                ctx.shadowColor = p.color;
+                ctx.shadowBlur = 25;
+                ctx.beginPath();
+                ctx.arc(px, py, p.radius, 0, Math.PI * 2);
+                ctx.fillStyle = p.color + '44'; //半透明
+                ctx.fill();
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(px, py, 8, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            ctx.restore();
+        }
+
+        // 镜像翻转控制点
+        function flipControlPoints() {
+            controlPoints.forEach(p => {
+                p.x = -p.x; // 水平翻转
+            });
+        }
+        canvas.addEventListener('pointerdown', e => {
+            const rect = canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+            //转换到人影坐标系
+            const dx = mx - puppetX;
+            const dy = my - puppetY;
+            const rotatedX = dx * Math.cos(-puppetAngle * Math.PI / 180) - dy * Math.sin(-puppetAngle * Math.PI / 180);
+            const rotatedY = dx * Math.sin(-puppetAngle * Math.PI / 180) + dy * Math.cos(-puppetAngle * Math.PI / 180);
+            for (let p of controlPoints) {
+                if (Math.hypot(rotatedX - p.x, rotatedY - p.y) < p.radius + 10) {
+                    activePoints.add(p);
+                    lastPositions[p.id] = { x: mx, y: my };
+                    pointPressTime[p.id] = Date.now(); // 记录按下时间
+                    lastMoveAngles[p.id] = null; // 重置移动角度记录
+                    isDragging = true; // 开始拖拽
+                    e.preventDefault();
+                    return;
+                }
+            }
+        });
+        canvas.addEventListener('pointermove', e => {
+            // 只有在拖拽状态下才处理
+            if (!isDragging || activePoints.size === 0) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+
+            // 判断是否有upper和lower类型的点同时被拖拽
+            const hasUpper = Array.from(activePoints).some(p => p.type === 'upper');
+            const hasLower = Array.from(activePoints).some(p => p.type === 'lower');
+
+            // 计算每个点的移动方向
+            const movements = [];
+            activePoints.forEach(p => {
+                const lastPos = lastPositions[p.id];
+                const dx = mx - lastPos.x;
+                const dy = my - lastPos.y;
+
+                // 计算移动角度(相对于当前坐标系的水平方向)
+                const moveAngle = Math.atan2(dy, dx) * 180 / Math.PI;
+                const moveDistance = Math.hypot(dx, dy);
+
+                // 检查移动角度变化是否超过45度
+                if (lastMoveAngles[p.id] !== null && moveDistance > 5) {
+                    const angleDiff = Math.abs(moveAngle - lastMoveAngles[p.id]);
+                    const normalizedAngleDiff = angleDiff > 180 ? 360 - angleDiff : angleDiff;
+
+                    // 只有角度变化达到45度或以上,且方向与当前图片方向相反时才翻转
+                    if (normalizedAngleDiff >= MIRROR_THRESHOLD) {
+                        // 计算移动方向:dx > 0为向右, dx < 0为向左
+                        const moveDirection = dx > 0 ? 1 : -1;
+
+                        // 只有移动方向与当前图片方向相反时才翻转
+                        if (moveDirection !== currentDirection) {
+                            currentDirection = moveDirection;
+                            isFlipped = !isFlipped;
+                            flipControlPoints();
+                            console.log(`触发镜像翻转! 当前朝向: ${currentDirection === 1 ? '向右' : '向左'}, 翻转状态: ${isFlipped ? '翻转' : '正常'}`);
+                            // 翻转后清除该点的角度记录,避免重复触发
+                            lastMoveAngles[p.id] = null;
+                        }
+                    }
+                }
+
+                // 记录本次移动角度(首次移动或移动距离足够大时)
+                if (moveDistance > 5) {
+                    lastMoveAngles[p.id] = moveAngle;
+                }
+
+                movements.push({ type: p.type, dx, dy });
+                lastPositions[p.id] = { x: mx, y: my };
+            });
+
+            // 强校验:同时按下 + 方向一致才能移动
+            if (hasUpper && hasLower) {
+                const upperMove = movements.find(m => m.type === 'upper');
+                const lowerMove = movements.find(m => m.type === 'lower');
+
+                if (upperMove && lowerMove) {
+                    // 找到对应的点,检查是否同时按下
+                    const upperPoint = Array.from(activePoints).find(p => p.type === 'upper');
+                    const lowerPoint = Array.from(activePoints).find(p => p.type === 'lower');
+
+                    const upperPressTime = pointPressTime[upperPoint.id];
+                    const lowerPressTime = pointPressTime[lowerPoint.id];
+
+                    // 检查是否同时按下(时间差在阈值内)
+                    const timeDiff = Math.abs(upperPressTime - lowerPressTime);
+                    const isSimultaneous = timeDiff <= SIMULTANEOUS_THRESHOLD;
+
+                    // 检查方向是否一致(使用点积判断)
+                    const dotProduct = upperMove.dx * lowerMove.dx + upperMove.dy * lowerMove.dy;
+                    const magnitudeUpper = Math.hypot(upperMove.dx, upperMove.dy);
+                    const magnitudeLower = Math.hypot(lowerMove.dx, lowerMove.dy);
+                    const isSameDirection = dotProduct > 0 && magnitudeUpper > 2 && magnitudeLower > 2;
+
+                    // 强校验:同时按下且方向一致才能移动
+                    if (isSimultaneous && isSameDirection) {
+                        puppetX += upperMove.dx;
+                        puppetY += upperMove.dy;
+                    }
+                }
+            }
+
+            draw();
+        });
+        canvas.addEventListener('pointerup', e => {
+            // 立即停止拖拽状态,不再处理任何翻转逻辑
+            isDragging = false;
+
+            // 清除所有点的记录
+            activePoints.forEach(p => {
+                delete lastPositions[p.id];
+                delete pointPressTime[p.id];
+                delete lastMoveAngles[p.id];
+            });
+            activePoints.clear();
+
+            // 只重绘,不触发任何翻转
+            draw();
+        });
+        //支持多点触摸(手机必备)
+        canvas.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+        //启动
+        img.onload = () => {
+            draw;
+            //每帧刷新(可改 requestAnimationFrame)
+            setInterval(draw, 16);
+        };
+    </script>
+</body>
+
+</html>
