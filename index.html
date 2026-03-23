@@ -31,7 +31,7 @@
     <script>
         const canvas = document.getElementById('stage'); const ctx = canvas.getContext('2d'); const W = 900, H = 500;
         let puppetX = 450, puppetY = 280;//人影中心位置
-        let puppetAngle = 0; //整体旋转角度(度
+        let puppetAngle = 0; //整体旋转角度(度)
         let isFlipped = false; // 是否镜像翻转
         let currentDirection = -1; // 当前朝向: -1为向左(初始), 1为向右
         //控制点(相对于人影中心的偏移)一根据你图片手动微调
@@ -48,19 +48,12 @@
         let initialPositions = {}; // 记录每个点按下时的初始位置
         let currentPositions = {}; // 记录每个点的当前位置
         let pointPressTime = {}; // 记录每个点按下的时间戳
-        let lastMoveAngles = {}; // 记录每个点上次移动角度
-        let puppetInitialPos = null; // 记录图像开始移动时的初始中心位置
         const SIMULTANEOUS_THRESHOLD = 1000; // 同时按下的时间阈值(毫秒) - 改为1秒
-        const MIRROR_THRESHOLD = 45; // 镜像翻转的角度阈值(度)
-        const MOVE_SCALE = 0.3; // 移动缩放系数,控制移动幅度
         let isDragging = false; // 是否正在拖拽中
         let needRedraw = true; // 是否需要重绘
         let img = new Image();
         img.src = './0.png';//- 换成你的图片路径
         function draw() {
-            if (!needRedraw) return;
-            needRedraw = false;
-
             ctx.clearRect(0, 0, W, H);
             //背景(羊皮纸)
             ctx.fillStyle = '#f5e8d3';
@@ -97,12 +90,6 @@
             ctx.restore();
         }
 
-        // 镜像翻转控制点
-        function flipControlPoints() {
-            controlPoints.forEach(p => {
-                p.x = -p.x; // 水平翻转
-            });
-        }
         canvas.addEventListener('pointerdown', e => {
             const rect = canvas.getBoundingClientRect();
             const mx = e.clientX - rect.left;
@@ -117,17 +104,7 @@
                     activePoints.add(p);
                     pointIds[e.pointerId] = p.id; // 记录pointerId对应的点
                     initialPositions[p.id] = { x: mx, y: my }; // 记录该点按下时的初始位置
-                    currentPositions[p.id] = { x: mx, y: my }; // 记录该点的当前位置
                     pointPressTime[p.id] = Date.now(); // 记录按下时间
-                    lastMoveAngles[p.id] = null; // 重置移动角度记录
-
-                    // 如果首次同时按住upper和lower点,记录图像初始中心位置
-                    const hasUpper = Array.from(activePoints).some(p => p.type === 'upper');
-                    const hasLower = Array.from(activePoints).some(p => p.type === 'lower');
-                    if (hasUpper && hasLower && !puppetInitialPos) {
-                        puppetInitialPos = { x: puppetX, y: puppetY };
-                    }
-
                     isDragging = true; // 开始拖拽
                     needRedraw = true;
                     e.preventDefault();
@@ -136,7 +113,6 @@
             }
         });
         canvas.addEventListener('pointermove', e => {
-            // 只有在拖拽状态下才处理
             if (!isDragging || activePoints.size === 0) return;
 
             // 检查这个pointerId是否对应某个点
@@ -147,21 +123,18 @@
             const mx = e.clientX - rect.left;
             const my = e.clientY - rect.top;
 
-            // 更新该点的当前位置
-            currentPositions[pointId] = { x: mx, y: my };
-
             // 判断是否有upper和lower类型的点同时被拖拽
             const hasUpper = Array.from(activePoints).some(p => p.type === 'upper');
             const hasLower = Array.from(activePoints).some(p => p.type === 'lower');
 
             // 只有同时按住两种类型的点才能移动图片
-            if (hasUpper && hasLower && puppetInitialPos) {
+            if (hasUpper && hasLower) {
                 // 获取upper和lower的点
                 const upperPoint = Array.from(activePoints).find(p => p.type === 'upper');
                 const lowerPoint = Array.from(activePoints).find(p => p.type === 'lower');
 
-                if (upperPoint && lowerPoint && initialPositions[upperPoint.id] && initialPositions[lowerPoint.id]) {
-                    // 计算两个点相对于各自初始位置的移动向量(基于各自的实际当前位置)
+                if (upperPoint && lowerPoint) {
+                    // 计算两个点相对于各自初始位置的移动向量
                     const upperInitPos = initialPositions[upperPoint.id];
                     const lowerInitPos = initialPositions[lowerPoint.id];
                     const upperCurrPos = currentPositions[upperPoint.id];
@@ -175,45 +148,29 @@
                     const upperDistance = Math.hypot(upperDx, upperDy);
                     const lowerDistance = Math.hypot(lowerDx, lowerDy);
 
-                    // 使用点积判断两个移动方向是否一致
+                    // 计算共同的移动方向和距离
+                    const commonDx = upperDx + lowerDx; // X方向上的平均移动
+                    const commonDy = upperDy + lowerDy; // Y方向上的平均移动
+                    const commonDistance = Math.min(upperDistance, lowerDistance); // 取较小移动距离
+
+                    // 检查方向一致性(使用点积)
                     const dotProduct = upperDx * lowerDx + upperDy * lowerDy;
+                    const isSameDirection = dotProduct > 0;
 
                     // 只有当两个点都移动了足够距离,且方向一致时才移动图片
-                    if (upperDistance > 2 && lowerDistance > 2 && dotProduct > 0) {
-                        // 取两个移动距离的最小值
-                        const minDistance = Math.min(upperDistance, lowerDistance);
-
-                        // 使用较小移动距离对应的移动向量
-                        let moveDx, moveDy;
-                        if (upperDistance <= lowerDistance) {
-                            moveDx = upperDx;
-                            moveDy = upperDy;
-                        } else {
-                            moveDx = lowerDx;
-                            moveDy = lowerDy;
-                        }
-
-                        // 判断水平方向和垂直方向是否一致
-                        const upperHorizontalConsistent = Math.sign(upperDx) === Math.sign(lowerDx);
-                        const upperVerticalConsistent = Math.sign(upperDy) === Math.sign(lowerDy);
-
-                        // 只在一致的方向上移动,并应用缩放系数
-                        if (upperHorizontalConsistent) {
-                            puppetX += moveDx * MOVE_SCALE; // 水平方向一致,则水平移动
-                        } else {
-                            // 水平方向不一致,水平不移动
-                        }
-
-                        if (upperVerticalConsistent) {
-                            puppetY += moveDy * MOVE_SCALE; // 垂直方向一致,则垂直移动
-                        } else {
-                            // 垂直方向不一致,垂直不移动
-                        }
-
+                    if (upperDistance > 2 && lowerDistance > 2 && isSameDirection) {
+                        // 沿着共同方向移动,使用较小距离
+                        puppetX += commonDx;
+                        puppetY += commonDy;
                         needRedraw = true;
                     }
                 }
             }
+
+            // 更新所有点的当前位置
+            currentPositions[pointId] = { x: mx, y: my };
+
+            draw();
         });
         canvas.addEventListener('pointerup', e => {
             // 检查这个pointerId是否对应某个点
@@ -227,16 +184,8 @@
                 delete initialPositions[pointId];
                 delete currentPositions[pointId];
                 delete pointPressTime[pointId];
-                delete lastMoveAngles[pointId];
                 delete pointIds[e.pointerId];
                 needRedraw = true;
-            }
-
-            // 如果不再同时有upper和lower点,清除图像初始中心位置记录
-            const hasUpper = Array.from(activePoints).some(p => p.type === 'upper');
-            const hasLower = Array.from(activePoints).some(p => p.type === 'lower');
-            if (!hasUpper || !hasLower) {
-                puppetInitialPos = null;
             }
 
             // 如果没有点在按下了,停止拖拽
