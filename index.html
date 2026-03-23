@@ -31,26 +31,23 @@
     <script>
         const canvas = document.getElementById('stage'); const ctx = canvas.getContext('2d'); const W = 900, H = 500;
         let puppetX = 450, puppetY = 280;//人影中心位置
-        let puppetAngle = 0; //整体旋转角度(度)
-        let isFlipped = false; // 是否镜像翻转
-        let currentDirection = -1; // 当前朝向: -1为向左(初始), 1为向右
+        let puppetAngle = 0; //整体旋转角度(度
         //控制点(相对于人影中心的偏移)一根据你图片手动微调
         const controlPoints = [
-            { id: 'head', x: 0, y: -120, color: '#00f0ff', radius: 30, type: 'upper' }, //头
-            { id: 'lhand', x: -80, y: -30, color: '#00f0ff', radius: 25, type: 'upper' },//左手
-            { id: 'rhand', x: 70, y: -40, color: '#00f0ff', radius: 25, type: 'upper' },//右手
-            { id: 'lfoot', x: -40, y: 90, color: '#ff0066', radius: 25, type: 'lower' },//左脚
-            { id: 'rfoot', x: 35, y: 95, color: '#ff0066', radius: 25, type: 'lower' }//右脚
+            { id: 'head', x: 0, y: -120, color: '#00f0ff', radius: 25, type: 'upper' }, //头
+            { id: 'lhand', x: -80, y: -30, color: '#00f0ff', radius: 20, type: 'upper' },//左手
+            { id: 'rhand', x: 70, y: -40, color: '#00f0ff', radius: 20, type: 'upper' },//右手
+            { id: 'lfoot', x: -40, y: 90, color: '#ff0066', radius: 18, type: 'lower' },//左脚
+            { id: 'rfoot', x: 35, y: 95, color: '#ff0066', radius: 18, type: 'lower' }//右脚
         ];
         // 记录拖拽状态
-        let activePoints = new Set(); // 当前正在被拖拽的点集合
-        let pointIds = {}; // 记录每个点对应的pointerId
-        let initialPositions = {}; // 记录每个点按下时的初始位置
-        let currentPositions = {}; // 记录每个点的当前位置
-        let pointPressTime = {}; // 记录每个点按下的时间戳
-        const SIMULTANEOUS_THRESHOLD = 1000; // 同时按下的时间阈值(毫秒) - 改为1秒
-        let isDragging = false; // 是否正在拖拽中
-        let needRedraw = true; // 是否需要重绘
+        let activePointers = new Map(); // 存储所有活动的触点 { pointerId -> point }
+        let lastUpperDrag = { dx: 0, dy: 0 };//上次上身拽向量
+        let lastLowerDrag = { dx: 0, dy: 0 };//上次下身向量
+        let dragStartPos = { x: 0, y: 0 };//拖拽起始人影位置
+        let puppetStartPos = { x: 0, y: 0 };//拖拽起始人影位置
+        let hasUpperPoint = false; // 是否有 upper 类型的触点被按下
+        let hasLowerPoint = false; // 是否有 lower 类型的触点被按下
         let img = new Image();
         img.src = './0.png';//- 换成你的图片路径
         function draw() {
@@ -61,15 +58,8 @@
             ctx.save();
             ctx.translate(puppetX, puppetY);
             ctx.rotate(puppetAngle * Math.PI / 180);
-
-            // 镜像翻转处理
-            if (isFlipped) {
-                ctx.scale(-1, 1);
-            }
-
             //绘制皮影人物
             ctx.drawImage(img, -img.width / 2, -img.height / 2);
-
             //绘制发光控制点(实时高亮)
             controlPoints.forEach(p => {
                 const px = p.x;
@@ -89,11 +79,14 @@
             });
             ctx.restore();
         }
-
         canvas.addEventListener('pointerdown', e => {
+            e.preventDefault(); // 防止默认行为
+            console.log("🚀 ~ e:", e)
             const rect = canvas.getBoundingClientRect();
             const mx = e.clientX - rect.left;
+            console.log("🚀 ~ mx:", mx)
             const my = e.clientY - rect.top;
+            console.log("🚀 ~ my:", my)
             //转换到人影坐标系
             const dx = mx - puppetX;
             const dy = my - puppetY;
@@ -101,116 +94,135 @@
             const rotatedY = dx * Math.sin(-puppetAngle * Math.PI / 180) + dy * Math.cos(-puppetAngle * Math.PI / 180);
             for (let p of controlPoints) {
                 if (Math.hypot(rotatedX - p.x, rotatedY - p.y) < p.radius + 10) {
-                    activePoints.add(p);
-                    pointIds[e.pointerId] = p.id; // 记录pointerId对应的点
-                    initialPositions[p.id] = { x: mx, y: my }; // 记录该点按下时的初始位置
-                    pointPressTime[p.id] = Date.now(); // 记录按下时间
-                    isDragging = true; // 开始拖拽
-                    needRedraw = true;
-                    e.preventDefault();
+                    // 记录这个触点
+                    activePointers.set(e.pointerId, {
+                        point: p,
+                        startX: mx,
+                        startY: my,
+                        lastX: mx,
+                        lastY: my
+                    });
+                    // 更新类型状态
+                    if (p.type === 'upper') hasUpperPoint = true;
+                    if (p.type === 'lower') hasLowerPoint = true;
+
+                    // 如果是第一个触点，记录人影起始位置
+                    if (activePointers.size === 1) {
+                        puppetStartPos = { x: puppetX, y: puppetY };
+                    }
+
+                    console.log(`触点 ${p.id} (${p.type}) 被按下，当前触点数: ${activePointers.size}`);
+                    canvas.setPointerCapture(e.pointerId); // 捕获指针
                     return;
                 }
             }
         });
         canvas.addEventListener('pointermove', e => {
-            if (!isDragging || activePoints.size === 0) return;
-
-            // 检查这个pointerId是否对应某个点
-            const pointId = pointIds[e.pointerId];
-            if (!pointId) return; // 不是已按下的点
-
             const rect = canvas.getBoundingClientRect();
             const mx = e.clientX - rect.left;
             const my = e.clientY - rect.top;
 
-            // 判断是否有upper和lower类型的点同时被拖拽
-            const hasUpper = Array.from(activePoints).some(p => p.type === 'upper');
-            const hasLower = Array.from(activePoints).some(p => p.type === 'lower');
+            // 如果这个触点没有在追踪，跳过
+            if (!activePointers.has(e.pointerId)) return;
 
-            // 只有同时按住两种类型的点才能移动图片
-            if (hasUpper && hasLower) {
-                // 获取upper和lower的点
-                const upperPoint = Array.from(activePoints).find(p => p.type === 'upper');
-                const lowerPoint = Array.from(activePoints).find(p => p.type === 'lower');
+            const pointerInfo = activePointers.get(e.pointerId);
 
-                if (upperPoint && lowerPoint) {
-                    // 计算两个点相对于各自初始位置的移动向量
-                    const upperInitPos = initialPositions[upperPoint.id];
-                    const lowerInitPos = initialPositions[lowerPoint.id];
-                    const upperCurrPos = currentPositions[upperPoint.id];
-                    const lowerCurrPos = currentPositions[lowerPoint.id];
+            // 计算这个触点的移动向量
+            const moveDx = mx - pointerInfo.lastX;
+            const moveDy = my - pointerInfo.lastY;
 
-                    const upperDx = upperCurrPos.x - upperInitPos.x;
-                    const upperDy = upperCurrPos.y - upperInitPos.y;
-                    const lowerDx = lowerCurrPos.x - lowerInitPos.x;
-                    const lowerDy = lowerCurrPos.y - lowerInitPos.y;
+            // 更新最后位置
+            pointerInfo.lastX = mx;
+            pointerInfo.lastY = my;
 
-                    const upperDistance = Math.hypot(upperDx, upperDy);
-                    const lowerDistance = Math.hypot(lowerDx, lowerDy);
+            // 只有当同时有 upper 和 lower 触点时才移动
+            if (hasUpperPoint && hasLowerPoint) {
+                // 计算所有 active 触点的平均移动方向
+                let totalDx = 0, totalDy = 0;
+                let count = 0;
 
-                    // 计算各自的移动角度
-                    const upperAngle = Math.atan2(upperDy, upperDx) * 180 / Math.PI;
-                    const lowerAngle = Math.atan2(lowerDy, lowerDx) * 180 / Math.PI;
+                activePointers.forEach(info => {
+                    const dx = info.lastX - info.startX;
+                    const dy = info.lastY - info.startY;
+                    totalDx += dx;
+                    totalDy += dy;
+                    count++;
+                });
 
-                    // 检测方向一致性:两个移动方向的角度差小于30度
-                    const angleDiff = Math.abs(upperAngle - lowerAngle);
-                    const normalizedAngleDiff = angleDiff > 180 ? 360 - angleDiff : angleDiff;
-                    const isDirectionConsistent = normalizedAngleDiff < 30;
+                if (count > 0) {
+                    // 使用平均移动量更新人影位置
+                    const avgDx = totalDx / count;
+                    const avgDy = totalDy / count;
+                    puppetX = puppetStartPos.x + avgDx;
+                    puppetY = puppetStartPos.y + avgDy;
 
-                    // 计算共同的移动方向和距离
-                    const commonDx = upperDx + lowerDx; // X方向上的平均移动
-                    const commonDy = upperDy + lowerDy; // Y方向上的平均移动
-                    const commonDistance = Math.min(upperDistance, lowerDistance); // 取较小移动距离
+                    // 记录上下身移动向量用于判断
+                    activePointers.forEach(info => {
+                        const dx = info.lastX - info.startX;
+                        const dy = info.lastY - info.startY;
+                        if (info.point.type === 'upper') {
+                            lastUpperDrag = { dx, dy };
+                        } else if (info.point.type === 'lower') {
+                            lastLowerDrag = { dx, dy };
+                        }
+                    });
 
-                    // 只有当两个点都移动了足够距离,且方向一致时才移动图片
-                    if (isDirectionConsistent && (upperDistance > 2 || lowerDistance > 2)) {
-                        // 沿着共同方向移动,使用较小距离
-                        puppetX += commonDx;
-                        puppetY += commonDy;
-                        needRedraw = true;
-                    } else {
-                        // 方向不一致,显示提示
-                        console.log('方向不一致,无法移动 - 上身和下身移动方向差异过大');
+                    //判断上下身方向是否一致
+                    const sameDir = Math.abs(lastUpperDrag.dx - lastLowerDrag.dx) < 50 && Math.abs(lastUpperDrag.dy - lastLowerDrag.dy) < 50;
+                    const hasMovement = Math.hypot(lastUpperDrag.dx, lastUpperDrag.dy) > 10 || Math.hypot(lastLowerDrag.dx, lastLowerDrag.dy) > 10;
+
+                    if (sameDir && hasMovement) {
+                        console.log('上下身配合成功-人影移动!');
+                        // 可以在这里添加走路动画
+                    } else if (hasMovement && !sameDir) {
+                        console.log('上下身方向不一致-人影不移动');
                     }
                 }
             }
 
-            // 更新所有点的当前位置
-            currentPositions[pointId] = { x: mx, y: my };
-
             draw();
         });
         canvas.addEventListener('pointerup', e => {
-            // 检查这个pointerId是否对应某个点
-            const pointId = pointIds[e.pointerId];
-            if (!pointId) return;
+            if (activePointers.has(e.pointerId)) {
+                const pointerInfo = activePointers.get(e.pointerId);
 
-            // 移除该点
-            const point = Array.from(activePoints).find(p => p.id === pointId);
-            if (point) {
-                activePoints.delete(point);
-                delete initialPositions[pointId];
-                delete currentPositions[pointId];
-                delete pointPressTime[pointId];
-                delete pointIds[e.pointerId];
-                needRedraw = true;
-            }
+                // 计算这个触点的总移动距离
+                const totalMove = Math.hypot(pointerInfo.lastX - pointerInfo.startX, pointerInfo.lastY - pointerInfo.startY);
 
-            // 如果没有点在按下了,停止拖拽
-            if (activePoints.size === 0) {
-                isDragging = false;
+                // 点击触发动作示例（移动距离很小认为是点击）
+                if (totalMove < 5) {
+                    console.log(`点击了 ${pointerInfo.point.id}，触发表演动作!`);// 这里可以播放预制动画序列
+                }
+
+                // 更新类型状态
+                if (pointerInfo.point.type === 'upper') hasUpperPoint = false;
+                if (pointerInfo.point.type === 'lower') hasLowerPoint = false;
+
+                // 移除触点
+                activePointers.delete(e.pointerId);
+                canvas.releasePointerCapture(e.pointerId);
+
+                console.log(`触点 ${pointerInfo.point.id} 被释放，剩余触点数: ${activePointers.size}`);
             }
         });
         //支持多点触摸(手机必备)
         canvas.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+        // 处理触点取消事件
+        canvas.addEventListener('pointercancel', e => {
+            if (activePointers.has(e.pointerId)) {
+                const pointerInfo = activePointers.get(e.pointerId);
+                if (pointerInfo.point.type === 'upper') hasUpperPoint = false;
+                if (pointerInfo.point.type === 'lower') hasLowerPoint = false;
+                activePointers.delete(e.pointerId);
+                canvas.releasePointerCapture(e.pointerId);
+                console.log(`触点 ${pointerInfo.point.id} 被取消，剩余触点数: ${activePointers.size}`);
+            }
+        });
         //启动
         img.onload = () => {
-            // 使用requestAnimationFrame优化渲染
-            function animate() {
-                draw();
-                requestAnimationFrame(animate);
-            }
-            animate();
+            draw;
+            //每帧刷新(可改 requestAnimationFrame)
+            setInterval(draw, 16);
         };
     </script>
 </body>
