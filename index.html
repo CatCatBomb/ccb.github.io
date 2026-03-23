@@ -46,6 +46,7 @@
         let activePoints = new Set(); // 当前正在被拖拽的点集合
         let pointIds = {}; // 记录每个点对应的pointerId
         let initialPositions = {}; // 记录每个点按下时的初始位置
+        let currentPositions = {}; // 记录每个点的当前位置
         let pointPressTime = {}; // 记录每个点按下的时间戳
         let lastMoveAngles = {}; // 记录每个点上次移动角度
         let puppetInitialPos = null; // 记录图像开始移动时的初始中心位置
@@ -115,6 +116,7 @@
                     activePoints.add(p);
                     pointIds[e.pointerId] = p.id; // 记录pointerId对应的点
                     initialPositions[p.id] = { x: mx, y: my }; // 记录该点按下时的初始位置
+                    currentPositions[p.id] = { x: mx, y: my }; // 记录该点的当前位置
                     pointPressTime[p.id] = Date.now(); // 记录按下时间
                     lastMoveAngles[p.id] = null; // 重置移动角度记录
 
@@ -144,6 +146,9 @@
             const mx = e.clientX - rect.left;
             const my = e.clientY - rect.top;
 
+            // 更新该点的当前位置
+            currentPositions[pointId] = { x: mx, y: my };
+
             // 判断是否有upper和lower类型的点同时被拖拽
             const hasUpper = Array.from(activePoints).some(p => p.type === 'upper');
             const hasLower = Array.from(activePoints).some(p => p.type === 'lower');
@@ -154,15 +159,17 @@
                 const upperPoint = Array.from(activePoints).find(p => p.type === 'upper');
                 const lowerPoint = Array.from(activePoints).find(p => p.type === 'lower');
 
-                if (upperPoint && lowerPoint) {
-                    // 计算两个点相对于各自初始位置的移动向量
+                if (upperPoint && lowerPoint && currentPositions[upperPoint.id] && currentPositions[lowerPoint.id]) {
+                    // 计算两个点相对于各自初始位置的移动向量(基于各自的实际当前位置)
                     const upperInitPos = initialPositions[upperPoint.id];
                     const lowerInitPos = initialPositions[lowerPoint.id];
+                    const upperCurrPos = currentPositions[upperPoint.id];
+                    const lowerCurrPos = currentPositions[lowerPoint.id];
 
-                    const upperDx = mx - upperInitPos.x;
-                    const upperDy = my - upperInitPos.y;
-                    const lowerDx = mx - lowerInitPos.x;
-                    const lowerDy = my - lowerInitPos.y;
+                    const upperDx = upperCurrPos.x - upperInitPos.x;
+                    const upperDy = upperCurrPos.y - upperInitPos.y;
+                    const lowerDx = lowerCurrPos.x - lowerInitPos.x;
+                    const lowerDy = lowerCurrPos.y - lowerInitPos.y;
 
                     const upperDistance = Math.hypot(upperDx, upperDy);
                     const lowerDistance = Math.hypot(lowerDx, lowerDy);
@@ -203,6 +210,7 @@
             if (point) {
                 activePoints.delete(point);
                 delete initialPositions[pointId];
+                delete currentPositions[pointId];
                 delete pointPressTime[pointId];
                 delete lastMoveAngles[pointId];
                 delete pointIds[e.pointerId];
