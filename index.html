@@ -150,6 +150,8 @@
                     if (isSimultaneous) {
                         // 计算upper点的移动量
                         const lastPos = lastPositions[upperPoint.id];
+                        if (!lastPos) return; // 首次移动时跳过
+
                         const dx = mx - lastPos.x;
                         const dy = my - lastPos.y;
                         const moveDistance = Math.hypot(dx, dy);
