@@ -159,7 +159,7 @@
                 const upperPoint = Array.from(activePoints).find(p => p.type === 'upper');
                 const lowerPoint = Array.from(activePoints).find(p => p.type === 'lower');
 
-                if (upperPoint && lowerPoint && currentPositions[upperPoint.id] && currentPositions[lowerPoint.id]) {
+                if (upperPoint && lowerPoint && initialPositions[upperPoint.id] && initialPositions[lowerPoint.id]) {
                     // 计算两个点相对于各自初始位置的移动向量(基于各自的实际当前位置)
                     const upperInitPos = initialPositions[upperPoint.id];
                     const lowerInitPos = initialPositions[lowerPoint.id];
@@ -192,9 +192,23 @@
                             moveDy = lowerDy;
                         }
 
-                        // 以图像初始中心为基准,计算新的图像位置
-                        puppetX = puppetInitialPos.x + moveDx;
-                        puppetY = puppetInitialPos.y + moveDy;
+                        // 判断水平方向和垂直方向是否一致
+                        const upperHorizontalConsistent = Math.sign(upperDx) === Math.sign(lowerDx);
+                        const upperVerticalConsistent = Math.sign(upperDy) === Math.sign(lowerDy);
+
+                        // 只在一致的方向上移动
+                        if (upperHorizontalConsistent) {
+                            puppetX += moveDx; // 水平方向一致,则水平移动
+                        } else {
+                            // 水平方向不一致,水平不移动
+                        }
+
+                        if (upperVerticalConsistent) {
+                            puppetY += moveDy; // 垂直方向一致,则垂直移动
+                        } else {
+                            // 垂直方向不一致,垂直不移动
+                        }
+
                         needRedraw = true;
                     }
                 }
