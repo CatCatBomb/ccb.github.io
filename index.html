@@ -47,12 +47,16 @@
         let lastPositions = {}; // 记录每个点上一帧的位置
         let pointPressTime = {}; // 记录每个点按下的时间戳
         let lastMoveAngles = {}; // 记录每个点上次移动角度
-        const SIMULTANEOUS_THRESHOLD = 200; // 同时按下的时间阈值(毫秒)
+        const SIMULTANEOUS_THRESHOLD = 1000; // 同时按下的时间阈值(毫秒) - 改为1秒
         const MIRROR_THRESHOLD = 45; // 镜像翻转的角度阈值(度)
         let isDragging = false; // 是否正在拖拽中
+        let needRedraw = true; // 是否需要重绘
         let img = new Image();
         img.src = './0.png';//- 换成你的图片路径
         function draw() {
+            if (!needRedraw) return;
+            needRedraw = false;
+
             ctx.clearRect(0, 0, W, H);
             //背景(羊皮纸)
             ctx.fillStyle = '#f5e8d3';
@@ -107,10 +111,11 @@
             for (let p of controlPoints) {
                 if (Math.hypot(rotatedX - p.x, rotatedY - p.y) < p.radius + 10) {
                     activePoints.add(p);
-                    lastPositions[p.id] = { x: mx, y: my };
+                    lastPositions[p.id] = { x: mx, y: my }; // 记录鼠标初始位置
                     pointPressTime[p.id] = Date.now(); // 记录按下时间
                     lastMoveAngles[p.id] = null; // 重置移动角度记录
                     isDragging = true; // 开始拖拽
+                    needRedraw = true;
                     e.preventDefault();
                     return;
                 }
@@ -128,58 +133,13 @@
             const hasUpper = Array.from(activePoints).some(p => p.type === 'upper');
             const hasLower = Array.from(activePoints).some(p => p.type === 'lower');
 
-            // 计算每个点的移动方向
-            const movements = [];
-            activePoints.forEach(p => {
-                const lastPos = lastPositions[p.id];
-                const dx = mx - lastPos.x;
-                const dy = my - lastPos.y;
-
-                // 计算移动角度(相对于当前坐标系的水平方向)
-                const moveAngle = Math.atan2(dy, dx) * 180 / Math.PI;
-                const moveDistance = Math.hypot(dx, dy);
-
-                // 检查移动角度变化是否超过45度
-                // if (lastMoveAngles[p.id] !== null && moveDistance > 5) {
-                //     const angleDiff = Math.abs(moveAngle - lastMoveAngles[p.id]);
-                //     const normalizedAngleDiff = angleDiff > 180 ? 360 - angleDiff : angleDiff;
-
-                //     // 只有角度变化达到45度或以上,且方向与当前图片方向相反时才翻转
-                //     if (normalizedAngleDiff >= MIRROR_THRESHOLD) {
-                //         // 计算移动方向:dx > 0为向右, dx < 0为向左
-                //         const moveDirection = dx > 0 ? 1 : -1;
-
-                //         // 只有移动方向与当前图片方向相反时才翻转
-                //         if (moveDirection !== currentDirection) {
-                //             currentDirection = moveDirection;
-                //             isFlipped = !isFlipped;
-                //             flipControlPoints();
-                //             console.log(`触发镜像翻转! 当前朝向: ${currentDirection === 1 ? '向右' : '向左'}, 翻转状态: ${isFlipped ? '翻转' : '正常'}`);
-                //             // 翻转后清除该点的角度记录,避免重复触发
-                //             lastMoveAngles[p.id] = null;
-                //         }
-                //     }
-                // }
-
-                // 记录本次移动角度(首次移动或移动距离足够大时)
-                if (moveDistance > 5) {
-                    lastMoveAngles[p.id] = moveAngle;
-                }
-
-                movements.push({ type: p.type, dx, dy });
-                lastPositions[p.id] = { x: mx, y: my };
-            });
-
-            // 强校验:同时按下 + 方向一致才能移动
+            // 只有同时按住两种类型的点才能移动图片
             if (hasUpper && hasLower) {
-                const upperMove = movements.find(m => m.type === 'upper');
-                const lowerMove = movements.find(m => m.type === 'lower');
+                // 找到upper和lower的点
+                const upperPoint = Array.from(activePoints).find(p => p.type === 'upper');
+                const lowerPoint = Array.from(activePoints).find(p => p.type === 'lower');
 
-                if (upperMove && lowerMove) {
-                    // 找到对应的点,检查是否同时按下
-                    const upperPoint = Array.from(activePoints).find(p => p.type === 'upper');
-                    const lowerPoint = Array.from(activePoints).find(p => p.type === 'lower');
-
+                if (upperPoint && lowerPoint) {
                     const upperPressTime = pointPressTime[upperPoint.id];
                     const lowerPressTime = pointPressTime[lowerPoint.id];
 
@@ -187,24 +147,26 @@
                     const timeDiff = Math.abs(upperPressTime - lowerPressTime);
                     const isSimultaneous = timeDiff <= SIMULTANEOUS_THRESHOLD;
 
-                    // 检查方向是否一致(使用点积判断)
-                    const dotProduct = upperMove.dx * lowerMove.dx + upperMove.dy * lowerMove.dy;
-                    const magnitudeUpper = Math.hypot(upperMove.dx, upperMove.dy);
-                    const magnitudeLower = Math.hypot(lowerMove.dx, lowerMove.dy);
-                    const isSameDirection = dotProduct > 0 && magnitudeUpper > 2 && magnitudeLower > 2;
+                    if (isSimultaneous) {
+                        // 计算upper点的移动量
+                        const lastPos = lastPositions[upperPoint.id];
+                        const dx = mx - lastPos.x;
+                        const dy = my - lastPos.y;
+                        const moveDistance = Math.hypot(dx, dy);
 
-                    // 强校验:同时按下且方向一致才能移动
-                    if (isSimultaneous && isSameDirection) {
-                        puppetX += upperMove.dx;
-                        puppetY += upperMove.dy;
+                        // 只有移动距离足够大才移动
+                        if (moveDistance > 2) {
+                            puppetX += dx;
+                            puppetY += dy;
+                            lastPositions[upperPoint.id] = { x: mx, y: my };
+                            needRedraw = true;
+                        }
                     }
                 }
             }
-
-            draw();
         });
         canvas.addEventListener('pointerup', e => {
-            // 立即停止拖拽状态,不再处理任何翻转逻辑
+            // 立即停止拖拽状态
             isDragging = false;
 
             // 清除所有点的记录
@@ -214,17 +176,18 @@
                 delete lastMoveAngles[p.id];
             });
             activePoints.clear();
-
-            // 只重绘,不触发任何翻转
-            draw();
+            needRedraw = true;
         });
         //支持多点触摸(手机必备)
         canvas.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
         //启动
         img.onload = () => {
-            draw;
-            //每帧刷新(可改 requestAnimationFrame)
-            setInterval(draw, 16);
+            // 使用requestAnimationFrame优化渲染
+            function animate() {
+                draw();
+                requestAnimationFrame(animate);
+            }
+            animate();
         };
     </script>
 </body>
