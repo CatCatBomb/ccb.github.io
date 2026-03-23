@@ -148,21 +148,31 @@
                     const upperDistance = Math.hypot(upperDx, upperDy);
                     const lowerDistance = Math.hypot(lowerDx, lowerDy);
 
+                    // 计算各自的移动角度
+                    const upperAngle = Math.atan2(upperDy, upperDx) * 180 / Math.PI;
+                    const lowerAngle = Math.atan2(lowerDy, lowerDx) * 180 / Math.PI;
+
+                    // 检测方向一致性:两个移动方向的角度差小于30度
+                    const angleDiff = Math.abs(upperAngle - lowerAngle);
+                    const normalizedAngleDiff = angleDiff > 180 ? 360 - angleDiff : angleDiff;
+                    const isDirectionConsistent = normalizedAngleDiff < 30;
+
                     // 计算共同的移动方向和距离
                     const commonDx = upperDx + lowerDx; // X方向上的平均移动
                     const commonDy = upperDy + lowerDy; // Y方向上的平均移动
                     const commonDistance = Math.min(upperDistance, lowerDistance); // 取较小移动距离
 
-                    // 检查方向一致性(使用点积)
-                    const dotProduct = upperDx * lowerDx + upperDy * lowerDy;
-                    const isSameDirection = dotProduct > 0;
-
                     // 只有当两个点都移动了足够距离,且方向一致时才移动图片
-                    if (upperDistance > 2 && lowerDistance > 2 && isSameDirection) {
-                        // 沿着共同方向移动,使用较小距离
-                        puppetX += commonDx;
-                        puppetY += commonDy;
-                        needRedraw = true;
+                    if (upperDistance > 2 || lowerDistance > 2) {
+                        if (isDirectionConsistent) {
+                            // 方向一致,沿着共同方向移动
+                            puppetX += commonDx;
+                            puppetY += commonDy;
+                            needRedraw = true;
+                        } else {
+                            // 方向不一致,显示提示
+                            console.log('方向不一致,无法移动 - 上身和下身移动方向差异过大');
+                        }
                     }
                 }
             }
