@@ -45,7 +45,7 @@
         // 记录拖拽状态
         let activePoints = new Set(); // 当前正在被拖拽的点集合
         let pointIds = {}; // 记录每个点对应的pointerId
-        let lastPositions = {}; // 记录每个点上一帧的位置
+        let initialPositions = {}; // 记录每个点按下时的初始位置
         let pointPressTime = {}; // 记录每个点按下的时间戳
         let lastMoveAngles = {}; // 记录每个点上次移动角度
         let lastPuppetPos = null; // 记录图像上次的中心位置
@@ -114,7 +114,7 @@
                 if (Math.hypot(rotatedX - p.x, rotatedY - p.y) < p.radius + 10) {
                     activePoints.add(p);
                     pointIds[e.pointerId] = p.id; // 记录pointerId对应的点
-                    lastPositions[p.id] = { x: mx, y: my }; // 记录鼠标初始位置
+                    initialPositions[p.id] = { x: mx, y: my }; // 记录该点按下时的初始位置
                     pointPressTime[p.id] = Date.now(); // 记录按下时间
                     lastMoveAngles[p.id] = null; // 重置移动角度记录
 
@@ -155,41 +155,42 @@
                 const lowerPoint = Array.from(activePoints).find(p => p.type === 'lower');
 
                 if (upperPoint && lowerPoint) {
-                    // 计算两个点各自的移动距离
-                    const upperLastPos = lastPositions[upperPoint.id];
-                    const lowerLastPos = lastPositions[lowerPoint.id];
-                    const upperDx = mx - upperLastPos.x;
-                    const upperDy = my - upperLastPos.y;
-                    const lowerDx = mx - lowerLastPos.x;
-                    const lowerDy = my - lowerLastPos.y;
+                    // 计算两个点相对于各自初始位置的移动向量
+                    const upperInitPos = initialPositions[upperPoint.id];
+                    const lowerInitPos = initialPositions[lowerPoint.id];
+
+                    const upperDx = mx - upperInitPos.x;
+                    const upperDy = my - upperInitPos.y;
+                    const lowerDx = mx - lowerInitPos.x;
+                    const lowerDy = my - lowerInitPos.y;
 
                     const upperDistance = Math.hypot(upperDx, upperDy);
                     const lowerDistance = Math.hypot(lowerDx, lowerDy);
 
-                    // 取两个移动距离的最小值
-                    const minDistance = Math.min(upperDistance, lowerDistance);
+                    // 使用点积判断两个移动方向是否一致
+                    const dotProduct = upperDx * lowerDx + upperDy * lowerDy;
 
-                    // 使用较小移动距离对应的移动向量
-                    if (minDistance > 2) {
+                    // 只有当两个点都移动了足够距离,且方向一致时才移动图片
+                    if (upperDistance > 2 && lowerDistance > 2 && dotProduct > 0) {
+                        // 取两个移动距离的最小值
+                        const minDistance = Math.min(upperDistance, lowerDistance);
+
+                        // 使用较小移动距离对应的移动向量
                         let moveDx, moveDy;
                         if (upperDistance <= lowerDistance) {
                             moveDx = upperDx;
                             moveDy = upperDy;
-                            lastPositions[upperPoint.id] = { x: mx, y: my };
                         } else {
                             moveDx = lowerDx;
                             moveDy = lowerDy;
-                            lastPositions[lowerPoint.id] = { x: mx, y: my };
                         }
 
-                        puppetX += moveDx;
-                        puppetY += moveDy;
+                        // 计算新的图像位置(相对于初始位置)
+                        puppetX = lastPuppetPos.x + moveDx;
+                        puppetY = lastPuppetPos.y + moveDy;
                         needRedraw = true;
                     }
                 }
-            } else {
-                // 只更新当前点的位置记录
-                lastPositions[pointId] = { x: mx, y: my };
             }
         });
         canvas.addEventListener('pointerup', e => {
@@ -201,7 +202,7 @@
             const point = Array.from(activePoints).find(p => p.id === pointId);
             if (point) {
                 activePoints.delete(point);
-                delete lastPositions[pointId];
+                delete initialPositions[pointId];
                 delete pointPressTime[pointId];
                 delete lastMoveAngles[pointId];
                 delete pointIds[e.pointerId];
